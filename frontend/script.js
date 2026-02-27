@@ -3,13 +3,28 @@ const API = "http://127.0.0.1:8000";
 // ---------------- LOGIN ----------------
 
 function login() {
+
     const role = document.getElementById("role").value;
+    const errorText = document.getElementById("loginError");
+
+    if (errorText) errorText.textContent = "";
+
+    if (!role) {
+        errorText.textContent = "Please select a role.";
+        return;
+    }
 
     if (role === "student") {
         window.location.href = "student.html";
-    } else {
-        window.location.href = "dashboard.html?role=" + role;
+        return;
     }
+
+    if (role === "admin") {
+        window.location.href = "admin.html";
+        return;
+    }
+
+    window.location.href = "dashboard.html?role=" + role;
 }
 
 function goHome() {
@@ -26,12 +41,50 @@ async function getRequirements() {
     const data = await res.json();
 
     document.getElementById("requirements").innerHTML = `
-        <p><strong>Attendance ≥</strong> ${data.attendance_threshold}</p>
-        <p><strong>Max Backlogs:</strong> ${data.max_backlogs}</p>
-        <p><strong>Documents Required:</strong> ${data.required_documents.join(", ")}</p>
-        <p><strong>Approval Flow:</strong> ${data.approval_chain.join(" → ")}</p>
+        <div class="result-card">
+            <p><strong>Minimum Attendance:</strong> ${data.attendance_threshold}%</p>
+            <p><strong>Maximum Backlogs:</strong> ${data.max_backlogs}</p>
+            <p><strong>Required Documents:</strong> ${data.required_documents.join(", ")}</p>
+            <p><strong>Approval Flow:</strong> ${data.approval_chain.join(" → ")}</p>
+        </div>
     `;
+
+    let checklist = "<h4>Checklist</h4><ul>";
+    checklist += `<li id="casteCheck">❌ Caste Certificate not uploaded</li>`;
+    checklist += `<li id="incomeCheck">❌ Income Certificate not uploaded</li>`;
+    checklist += "</ul>";
+
+    document.getElementById("docChecklist").innerHTML = checklist;
 }
+
+// ---------------- DOCUMENT UPLOAD CHECK ----------------
+
+const casteInput = document.getElementById("caste_doc");
+const incomeInput = document.getElementById("income_doc");
+const submitBtn = document.getElementById("submitBtn");
+
+function validateUploads() {
+
+    if (casteInput?.files.length > 0 &&
+        incomeInput?.files.length > 0) {
+
+        submitBtn.disabled = false;
+    } else {
+        submitBtn.disabled = true;
+    }
+}
+
+casteInput?.addEventListener("change", function() {
+    document.getElementById("casteCheck").innerHTML =
+        "✅ Caste Certificate uploaded";
+    validateUploads();
+});
+
+incomeInput?.addEventListener("change", function() {
+    document.getElementById("incomeCheck").innerHTML =
+        "✅ Income Certificate uploaded";
+    validateUploads();
+});
 
 // ---------------- SUBMIT ----------------
 
@@ -48,13 +101,8 @@ document.addEventListener("submit", async function(e) {
             document.getElementById("request_type").value);
         formData.append("role", "student");
 
-        const casteFile =
-            document.getElementById("caste_doc").files[0];
-        const incomeFile =
-            document.getElementById("income_doc").files[0];
-
-        if (casteFile) formData.append("caste_doc", casteFile);
-        if (incomeFile) formData.append("income_doc", incomeFile);
+        formData.append("caste_doc", casteInput.files[0]);
+        formData.append("income_doc", incomeInput.files[0]);
 
         const res = await fetch(`${API}/submit/`, {
             method: "POST",
@@ -63,16 +111,27 @@ document.addEventListener("submit", async function(e) {
 
         const data = await res.json();
 
-        document.getElementById("response").textContent =
-            JSON.stringify(data, null, 2);
+        showResult(data);
     }
 });
+
+function showResult(data) {
+
+    document.getElementById("response").innerHTML = `
+        <div class="result-card">
+            <h3>${data.message}</h3>
+            <p><strong>Eligibility Score:</strong> ${data.approval_probability}%</p>
+            <p><strong>Current Stage:</strong> ${data.current_stage}</p>
+        </div>
+    `;
+}
 
 // ---------------- DASHBOARD ----------------
 
 async function loadRequests() {
 
-    const params = new URLSearchParams(window.location.search);
+    const params =
+        new URLSearchParams(window.location.search);
     const role = params.get("role");
 
     document.getElementById("roleTitle").innerText =
@@ -85,13 +144,13 @@ async function loadRequests() {
 
     data.forEach(req => {
         html += `
-            <div class="request-card">
+            <div class="card">
                 <p><strong>Name:</strong> ${req.name}</p>
                 <p><strong>Attendance:</strong> ${req.attendance}</p>
                 <p><strong>Backlogs:</strong> ${req.backlogs}</p>
                 <p><strong>Score:</strong> ${req.approval_probability}</p>
                 <button onclick="approve(${req.id}, '${role}')">
-                    Approve
+                   Approve
                 </button>
             </div>
         `;
@@ -104,10 +163,10 @@ async function approve(id, role) {
     await fetch(`${API}/approve/${id}/${role}`, {
         method: "POST"
     });
-
     loadRequests();
 }
-// -------- DOMAIN SIMULATION --------
+
+// ---------------- ADMIN ----------------
 
 function simulateDomain() {
 
@@ -116,37 +175,17 @@ function simulateDomain() {
 
     let preview = "";
 
-    if (domain === "college") {
-        preview = `
-            <p><strong>Flow:</strong>
-            Student → Advisor → HOD → Office → Principal</p>
-            <p><strong>Validation:</strong>
-            Attendance, Backlogs, Documents</p>
-        `;
-    }
+    if (domain === "college")
+        preview = "Student → Advisor → HOD → Office → Principal";
 
-    if (domain === "healthcare") {
-        preview = `
-            <p><strong>Flow:</strong>
-            Patient → Doctor → Insurance → Hospital Admin</p>
-            <p><strong>Validation:</strong>
-            Insurance eligibility, Medical documents</p>
-        `;
-    }
+    if (domain === "healthcare")
+        preview = "Patient → Doctor → Insurance → Hospital Admin";
 
-    if (domain === "government") {
-        preview = `
-            <p><strong>Flow:</strong>
-            Citizen → Officer → Department Head → Collector</p>
-            <p><strong>Validation:</strong>
-            Income proof, Identity verification</p>
-        `;
-    }
+    if (domain === "government")
+        preview = "Citizen → Officer → Department → Collector";
 
-    document.getElementById("domainPreview").innerHTML = preview;
+    document.getElementById("domainPreview").innerText = preview;
 }
-
-// -------- ADMIN VIEW RULE --------
 
 async function adminViewRules() {
 
@@ -158,10 +197,9 @@ async function adminViewRules() {
 
     const data = await res.json();
 
-    document.getElementById("adminRulesDisplay").innerHTML = `
-        <p><strong>Attendance:</strong> ${data.attendance_threshold}</p>
-        <p><strong>Max Backlogs:</strong> ${data.max_backlogs}</p>
-        <p><strong>Documents:</strong> ${data.required_documents.join(", ")}</p>
-        <p><strong>Approval Chain:</strong> ${data.approval_chain.join(" → ")}</p>
-    `;
+    document.getElementById("adminRulesDisplay").innerHTML =
+        `<p>Attendance: ${data.attendance_threshold}</p>
+         <p>Backlogs: ${data.max_backlogs}</p>
+         <p>Documents: ${data.required_documents.join(", ")}</p>
+         <p>Flow: ${data.approval_chain.join(" → ")}</p>`;
 }

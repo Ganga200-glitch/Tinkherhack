@@ -14,30 +14,34 @@
 <div class="container">
 
     <div class="card">
-        <h3>Check Scholarship Requirements</h3>
-        <button onclick="getRequirements()">View Rules</button>
+        <h3>Scholarship Requirements</h3>
+        <button onclick="getRequirements()">Load Requirements</button>
         <div id="requirements"></div>
+        <div id="docChecklist"></div>
     </div>
 
     <div class="card">
-        <h3>Submit Scholarship Application</h3>
+        <h3>Submit Application</h3>
 
         <form id="submitForm">
-            <input type="number" id="student_id" placeholder="Student ID" required>
+            <input type="number" id="student_id"
+                   placeholder="Student ID" required>
 
             <input type="text" id="request_type"
                    value="Scholarship" readonly>
 
-            <label>Caste Certificate</label>
-            <input type="file" id="caste_doc">
+            <label>Caste Certificate *</label>
+            <input type="file" id="caste_doc" required>
 
-            <label>Income Certificate</label>
-            <input type="file" id="income_doc">
+            <label>Income Certificate *</label>
+            <input type="file" id="income_doc" required>
 
-            <button type="submit">Submit Application</button>
+            <button type="submit" id="submitBtn" disabled>
+                Submit
+            </button>
         </form>
 
-        <pre id="response"></pre>
+        <div id="response"></div>
     </div>
 
 </div>
