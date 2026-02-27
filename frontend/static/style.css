@@ -105,3 +105,51 @@ input, select {
     color: white;
     font-weight: bold;
 }
+.flow {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.flow-step {
+    padding: 8px 12px;
+    border-radius: 20px;
+    background: #ccc;
+}
+
+.flow-step.active {
+    background: orange;
+    color: white;
+}
+
+.flow-step.completed {
+    background: green;
+    color: white;
+}
+
+.flow-step.rejected {
+    background: red;
+    color: white;
+}
+.ai-decision {
+    padding: 10px;
+    border-radius: 8px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.badge-green {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.badge-yellow {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.badge-red {
+    background-color: #f8d7da;
+    color: #721c24;
+}

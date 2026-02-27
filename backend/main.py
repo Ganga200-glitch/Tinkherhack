@@ -408,3 +408,27 @@ def student_requests(student_id: int):
     finally:
         cursor.close()
         db.close()
+
+# ---------------- DASHBOARD PENDING REQUESTS ---------------- #
+
+@app.get("/requests/{role}")
+def get_requests(role: str):
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT r.id, u.name, u.attendance, u.backlogs,
+                   r.approval_probability, r.current_stage
+            FROM requests r
+            JOIN users u ON r.student_id = u.id
+            WHERE LOWER(r.current_stage)=LOWER(%s)
+            AND r.status='Pending'
+        """, (role,))
+
+        return cursor.fetchall()
+
+    finally:
+        cursor.close()
+        db.close()

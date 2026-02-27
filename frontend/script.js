@@ -42,8 +42,6 @@ function goHome() {
 
 document.addEventListener("DOMContentLoaded", function () {
 
-    /* ---------------- STUDENT FILE VALIDATION ---------------- */
-
     const casteInput = document.getElementById("caste_doc");
     const incomeInput = document.getElementById("income_doc");
     const submitBtn = document.getElementById("submitBtn");
@@ -61,6 +59,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    // File upload listeners
     casteInput?.addEventListener("change", function () {
         const check = document.getElementById("casteCheck");
         if (check) check.innerHTML = "✅ Caste Certificate uploaded";
@@ -73,7 +72,51 @@ document.addEventListener("DOMContentLoaded", function () {
         validateUploads();
     });
 
-    /* ---------------- SUBMIT FORM ---------------- */
+    // Submit form
+    const form = document.getElementById("submitForm");
+
+    form?.addEventListener("submit", async function (e) {
+
+        e.preventDefault();
+
+        const formData = new FormData();
+        formData.append("student_id",
+            document.getElementById("student_id").value);
+        formData.append("request_type",
+            document.getElementById("request_type").value);
+        formData.append("role", "student");
+
+        formData.append("caste_doc", casteInput?.files[0]);
+        formData.append("income_doc", incomeInput?.files[0]);
+
+        const res = await fetch(`${API}/submit/`, {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await res.json();
+
+        showStudentResult(data);
+        loadStudentRequests(); // refresh immediately after submit
+    });
+
+    /* 🔥 AUTO REFRESH STUDENT DASHBOARD (Safe Version) */
+    setInterval(() => {
+        const studentId = document.getElementById("student_id")?.value;
+
+        // Only refresh if student page is active and ID exists
+        if (studentId && document.getElementById("myRequests")) {
+            loadStudentRequests();
+        }
+    }, 5000); // every 5 seconds
+
+});
+
+    incomeInput?.addEventListener("change", function () {
+        const check = document.getElementById("incomeCheck");
+        if (check) check.innerHTML = "✅ Income Certificate uploaded";
+        validateUploads();
+    });
 
     const form = document.getElementById("submitForm");
 
@@ -99,9 +142,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const data = await res.json();
 
         showStudentResult(data);
+
+        // 🔥 Auto refresh tracking after submit
+        loadStudentRequests();
     });
 
-});
+
 
 /* =====================================================
    STUDENT SECTION
@@ -109,46 +155,80 @@ document.addEventListener("DOMContentLoaded", function () {
 
 async function getRequirements() {
 
-    const typeInput = document.getElementById("request_type");
-    if (!typeInput) return;
+    const type = document.getElementById("request_type").value;
 
-    const type = typeInput.value;
+    if (!type) {
+        alert("Select request type first");
+        return;
+    }
 
     const res = await fetch(`${API}/requirements/${type}`);
+
+    if (!res.ok) {
+        alert("Failed to load requirements");
+        return;
+    }
+
     const data = await res.json();
 
     document.getElementById("requirements").innerHTML = `
         <div class="result-card">
+            <h4>AI Requirements Analysis</h4>
             <p><strong>Minimum Attendance:</strong> ${data.attendance_threshold}%</p>
             <p><strong>Maximum Backlogs:</strong> ${data.max_backlogs}</p>
             <p><strong>Required Documents:</strong> ${data.required_documents.join(", ")}</p>
             <p><strong>Approval Flow:</strong> ${data.approval_chain.join(" → ")}</p>
         </div>
     `;
-
-    document.getElementById("docChecklist").innerHTML = `
-        <h4>Checklist</h4>
-        <ul>
-            <li id="casteCheck">❌ Caste Certificate not uploaded</li>
-            <li id="incomeCheck">❌ Income Certificate not uploaded</li>
-        </ul>
-    `;
 }
 
 function showStudentResult(data) {
 
-    const stages = [
-        "Student",
-        "Advisor",
-        "HOD",
-        "Office",
-        "Principal"
-    ];
+    const probability = Math.round(data.approval_probability);
 
+    /* ===============================
+       AI DECISION LOGIC (Frontend)
+    =============================== */
+
+    let recommendation = "";
+    let badgeClass = "";
+    let confidence = "";
+
+    if (probability >= 75) {
+        recommendation = "Likely to be Approved";
+        badgeClass = "badge-green";
+        confidence = "High Confidence";
+    }
+    else if (probability >= 50) {
+        recommendation = "Moderate Risk - Needs Review";
+        badgeClass = "badge-yellow";
+        confidence = "Medium Confidence";
+    }
+    else {
+        recommendation = "High Risk of Rejection";
+        badgeClass = "badge-red";
+        confidence = "Low Confidence";
+    }
+
+    let documentStatus = "";
+    if (data.document_authenticity_score >= 70) {
+        documentStatus = `<span class="badge-green">Documents Verified</span>`;
+    }
+    else if (data.document_authenticity_score >= 40) {
+        documentStatus = `<span class="badge-yellow">Documents Partially Valid</span>`;
+    }
+    else {
+        documentStatus = `<span class="badge-red">Documents Suspicious / Invalid</span>`;
+    }
+
+    /* ===============================
+       WORKFLOW TRACKING
+    =============================== */
+
+    const stages = ["Student", "Advisor", "HOD", "Office", "Principal"];
     let workflowHTML = "<div class='workflow-container'>";
 
     stages.forEach(stage => {
-
         let className = "workflow-step";
 
         if (stage === data.current_stage) {
@@ -164,25 +244,67 @@ function showStudentResult(data) {
 
     workflowHTML += "</div>";
 
+    /* ===============================
+       ISSUE DISPLAY
+    =============================== */
+
+    let issuesHTML = "";
+
+    if (data.validation_issues?.length > 0) {
+        issuesHTML += `
+            <h4>Eligibility Issues</h4>
+            <ul>
+                ${data.validation_issues.map(i => `<li>${i}</li>`).join("")}
+            </ul>
+        `;
+    }
+
+    if (data.document_issues?.length > 0) {
+        issuesHTML += `
+            <h4>Document Validation Issues</h4>
+            <ul>
+                ${data.document_issues.map(i => `<li>${i}</li>`).join("")}
+            </ul>
+        `;
+    }
+
+    /* ===============================
+       FINAL UI OUTPUT
+    =============================== */
+
     document.getElementById("response").innerHTML = `
         <div class="result-card">
+
             <h3>${data.message}</h3>
+
+            <div class="ai-decision ${badgeClass}">
+                ${recommendation}
+            </div>
+
+            <p><strong>Confidence Level:</strong> ${confidence}</p>
 
             <div class="progress-container">
                 <div class="progress-bar"
-                     style="width:${data.approval_probability}%">
-                    ${data.approval_probability}%
+                     style="width:${probability}%">
+                    ${probability}%
                 </div>
             </div>
 
+            <p><strong>Eligibility Score:</strong> ${data.eligibility_score ?? "-"}%</p>
+            <p><strong>Document Authenticity Score:</strong> ${data.document_authenticity_score ?? "-"}%</p>
+
+            <p><strong>Document Status:</strong> ${documentStatus}</p>
+
+            ${issuesHTML}
+
             <h4>Workflow Tracking</h4>
             ${workflowHTML}
+
         </div>
     `;
 }
-
 /* =====================================================
-   STUDENT HISTORY
+   STUDENT HISTORY  (ONLY ONE VERSION)
 ===================================================== */
 
 async function loadStudentRequests() {
@@ -190,10 +312,7 @@ async function loadStudentRequests() {
     const studentId =
         document.getElementById("student_id")?.value;
 
-    if (!studentId) {
-        alert("Please enter your Student ID first.");
-        return;
-    }
+    if (!studentId) return;
 
     const res =
         await fetch(`${API}/student_requests/${studentId}`);
@@ -238,10 +357,45 @@ async function loadStudentRequests() {
             `;
         }
 
-        html += `</div>`;
+        html += `
+                ${renderFlowCircle(req.current_stage)}
+            </div>
+        `;
     });
 
     document.getElementById("myRequests").innerHTML = html;
+}
+
+/* =====================================================
+   FLOW RENDER (Single Version)
+===================================================== */
+
+function renderFlowCircle(stage) {
+
+    const stages = ["Advisor", "HOD", "Office", "Principal"];
+
+    let html = `<div class="flow">`;
+
+    stages.forEach(s => {
+
+        let cls = "flow-step";
+
+        if (stage === "Rejected") {
+            cls += " rejected";
+        }
+        else if (stage === "Completed") {
+            cls += " completed";
+        }
+        else if (s === stage) {
+            cls += " active";
+        }
+
+        html += `<span class="${cls}">${s}</span>`;
+    });
+
+    html += `</div>`;
+
+    return html;
 }
 
 /* =====================================================
@@ -295,7 +449,9 @@ async function approve(id, role) {
     loadRequests();
 }
 
-/* ---------------- REJECT MODAL ---------------- */
+/* =====================================================
+   REJECT MODAL
+===================================================== */
 
 function openRejectModal(id, role) {
     rejectRequestId = id;

@@ -4,7 +4,8 @@
     <title>Student Portal</title>
     <link rel="stylesheet" href="static/style.css">
 </head>
-<body>
+
+<body onload="loadStudentRequests()">
 
 <div class="navbar">
     <h2>Student Portal</h2>
@@ -13,13 +14,21 @@
 
 <div class="container">
 
+    <!-- REQUIREMENTS -->
     <div class="card">
         <h3>Scholarship Requirements</h3>
+
+        <select id="request_type">
+            <option value="Scholarship">Scholarship</option>
+        </select>
+
         <button onclick="getRequirements()">Load Requirements</button>
+
         <div id="requirements"></div>
         <div id="docChecklist"></div>
     </div>
 
+    <!-- SUBMIT FORM -->
     <div class="card">
         <h3>Submit Application</h3>
 
@@ -27,7 +36,7 @@
             <input type="number" id="student_id"
                    placeholder="Student ID" required>
 
-            <input type="text" id="request_type"
+            <input type="text"
                    value="Scholarship" readonly>
 
             <label>Caste Certificate *</label>
@@ -44,13 +53,19 @@
         <div id="response"></div>
     </div>
 
+    <!-- STUDENT TRACKING -->
+    <div class="card">
+        <h3>My Applications</h3>
+
+        <button onclick="loadStudentRequests()">
+            Refresh Applications
+        </button>
+
+        <div id="myRequests"></div>
+    </div>
+
 </div>
 
 <script src="script.js"></script>
 </body>
 </html>
-<button onclick="loadStudentRequests()">
-    View My Applications
-</button>
-
-<div id="myRequests"></div>
