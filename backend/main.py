@@ -289,3 +289,65 @@ def approve_request(request_id: int, role: str):
     finally:
         cursor.close()
         db.close()
+
+@app.post("/reject/{request_id}/{role}")
+def reject_request(
+    request_id: int,
+    role: str,
+    reason: str = Form(...)
+):
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            "SELECT * FROM requests WHERE id=%s",
+            (request_id,)
+        )
+        request = cursor.fetchone()
+
+        if not request:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        if request["current_stage"] != role:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        cursor.execute("""
+            UPDATE requests
+            SET status='Rejected',
+                current_stage='Rejected',
+                rejection_reason=%s
+            WHERE id=%s
+        """, (reason, request_id))
+
+        db.commit()
+
+        return {"message": "Request rejected successfully"}
+
+    finally:
+        cursor.close()
+        db.close()
+
+@app.get("/student_requests/{student_id}")
+def student_requests(student_id: int):
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    try:
+        cursor.execute("""
+            SELECT r.id, r.status,
+                   r.approval_probability,
+                   r.current_stage,
+                   r.rejection_reason
+            FROM requests r
+            WHERE r.student_id=%s
+            ORDER BY r.id DESC
+        """, (student_id,))
+
+        return cursor.fetchall()
+
+    finally:
+        cursor.close()
+        db.close()

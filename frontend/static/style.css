@@ -58,3 +58,50 @@ input, select {
     padding:8px;
     margin:8px 0;
 }
+
+.result-card {
+    margin-top:15px;
+    padding:15px;
+    background:#f8f9fc;
+    border-radius:8px;
+}
+/* Progress Bar */
+
+.progress-container {
+    width: 100%;
+    background: #e0e0e0;
+    border-radius: 20px;
+    margin: 15px 0;
+}
+
+.progress-bar {
+    background: #1cc88a;
+    color: white;
+    padding: 8px;
+    border-radius: 20px;
+    text-align: center;
+    font-weight: bold;
+}
+
+/* Workflow Tracking */
+
+.workflow-container {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
+}
+
+.workflow-step {
+    background: #f1f1f1;
+    padding: 10px;
+    border-radius: 20px;
+    width: 18%;
+    text-align: center;
+    font-size: 13px;
+}
+
+.workflow-step.active {
+    background: #4e73df;
+    color: white;
+    font-weight: bold;
+}

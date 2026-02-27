@@ -12,9 +12,26 @@
 </div>
 
 <div class="container">
+
     <div class="card">
         <button onclick="loadRequests()">Load Pending Requests</button>
-        <div id="requests"></div>
+    </div>
+
+    <div id="requests" class="request-grid"></div>
+
+</div>
+
+<!-- Reject Modal -->
+<div id="rejectModal" class="modal">
+    <div class="modal-content">
+        <h3>Reject Request</h3>
+        <textarea id="rejectReason"
+                  placeholder="Enter rejection reason"></textarea>
+
+        <div class="modal-buttons">
+            <button onclick="confirmReject()">Confirm</button>
+            <button class="reject-btn" onclick="closeModal()">Cancel</button>
+        </div>
     </div>
 </div>
 
