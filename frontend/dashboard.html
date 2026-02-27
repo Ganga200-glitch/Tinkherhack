@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authority Dashboard</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+
+<div class="navbar">
+    <h2 id="roleTitle"></h2>
+    <button onclick="goHome()">Logout</button>
+</div>
+
+<div class="container">
+    <div class="card">
+        <button onclick="loadRequests()">Load Pending Requests</button>
+        <div id="requests"></div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

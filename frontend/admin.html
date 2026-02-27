@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Control Panel</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+
+<div class="navbar">
+    <h2>System Configuration Dashboard</h2>
+    <button onclick="goHome()">Logout</button>
+</div>
+
+<div class="container">
+
+    <div class="card">
+        <h3>System Domain Simulation</h3>
+
+        <select id="domainSelect" onchange="simulateDomain()">
+            <option value="college">College Workflow</option>
+            <option value="healthcare">Healthcare Workflow</option>
+            <option value="government">Government Administration</option>
+        </select>
+
+        <div id="domainPreview"></div>
+    </div>
+
+    <div class="card">
+        <h3>View Rule Configuration</h3>
+
+        <input type="text"
+               id="adminRequestType"
+               value="Scholarship"
+               placeholder="Enter Request Type">
+
+        <button onclick="adminViewRules()">Load Rule</button>
+
+        <div id="adminRulesDisplay"></div>
+    </div>
+
+    <div class="card">
+        <h3>System Insights</h3>
+        <p>✔ Rule-driven architecture</p>
+        <p>✔ Role-based routing</p>
+        <p>✔ Configurable approval chain</p>
+        <p>✔ Expandable across domains</p>
+        <p>✔ Cost-effective modular deployment</p>
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
