@@ -1,6 +1,6 @@
+import PyPDF2
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 import mysql.connector
 import shutil
 import os
@@ -23,14 +23,77 @@ def get_db():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="Ganga@2005",  # CHANGE THIS
+        password="Ganga@2005",
         database="workflow_db"
     )
 
-# ---------------- INTELLIGENT LAYER (Scholarship Rule) ---------------- #
+# ---------------- PDF EXTRACTION ---------------- #
+
+def extract_text_from_pdf(path):
+    text = ""
+    try:
+        with open(path, "rb") as file:
+            reader = PyPDF2.PdfReader(file)
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text
+    except Exception as e:
+        print("PDF Extraction Error:", e)
+
+    print("Extracted Text:", text)
+    return text.lower()
+
+# ---------------- DOCUMENT VALIDATION ---------------- #
+
+def validate_caste_certificate(path, student_name):
+    text = extract_text_from_pdf(path)
+
+    required = [
+        "government",
+        "caste certificate",
+        student_name.lower(),
+        "issued",
+        "authority"
+    ]
+
+    score = 0
+    issues = []
+
+    for word in required:
+        if word in text:
+            score += 20
+        else:
+            issues.append(f"Missing keyword: {word}")
+
+    return score, issues
+
+
+def validate_income_certificate(path):
+    text = extract_text_from_pdf(path)
+
+    required = [
+        "income certificate",
+        "annual income",
+        "government",
+        "year"
+    ]
+
+    score = 0
+    issues = []
+
+    for word in required:
+        if word in text:
+            score += 25
+        else:
+            issues.append(f"Missing keyword: {word}")
+
+    return score, issues
+
+# ---------------- ELIGIBILITY ---------------- #
 
 def calculate_scholarship_score(attendance, backlogs, threshold,
-                                 caste_present, income_present):
+                                caste_present, income_present):
 
     score = 0
     issues = []
@@ -43,7 +106,7 @@ def calculate_scholarship_score(attendance, backlogs, threshold,
     if backlogs == 0:
         score += 25
     else:
-        issues.append("Backlogs present (Must be zero)")
+        issues.append("Backlogs must be zero")
 
     if caste_present:
         score += 25
@@ -57,7 +120,7 @@ def calculate_scholarship_score(attendance, backlogs, threshold,
 
     return score, issues
 
-# ---------------- GET REQUIREMENTS ---------------- #
+# ---------------- REQUIREMENTS ---------------- #
 
 @app.get("/requirements/{request_type}")
 def get_requirements(request_type: str):
@@ -73,7 +136,7 @@ def get_requirements(request_type: str):
         rtype = cursor.fetchone()
 
         if not rtype:
-            raise HTTPException(status_code=404, detail="Request type not found")
+            raise HTTPException(404, "Request type not found")
 
         cursor.execute(
             "SELECT * FROM rules WHERE request_type_id=%s",
@@ -81,17 +144,10 @@ def get_requirements(request_type: str):
         )
         rule = cursor.fetchone()
 
-        if not rule:
-            raise HTTPException(status_code=404, detail="Rules not configured")
-
-        required_docs = []
-        if rule["required_documents"]:
-            required_docs = rule["required_documents"].split(",")
-
         return {
             "attendance_threshold": rule["attendance_threshold"],
             "max_backlogs": rule["max_backlogs"],
-            "required_documents": required_docs,
+            "required_documents": rule["required_documents"].split(","),
             "approval_chain": rule["approval_chain"].split(",")
         }
 
@@ -99,7 +155,7 @@ def get_requirements(request_type: str):
         cursor.close()
         db.close()
 
-# ---------------- SUBMIT REQUEST ---------------- #
+# ---------------- SUBMIT ---------------- #
 
 @app.post("/submit/")
 def submit_request(
@@ -117,7 +173,7 @@ def submit_request(
     cursor = db.cursor(dictionary=True)
 
     try:
-        # Fetch student
+        # ---------------- FETCH STUDENT ----------------
         cursor.execute(
             "SELECT * FROM users WHERE id=%s AND role='student'",
             (student_id,)
@@ -127,7 +183,7 @@ def submit_request(
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
 
-        # Fetch request type
+        # ---------------- FETCH REQUEST TYPE ----------------
         cursor.execute(
             "SELECT * FROM request_types WHERE LOWER(name)=LOWER(%s)",
             (request_type,)
@@ -137,7 +193,7 @@ def submit_request(
         if not rtype:
             raise HTTPException(status_code=404, detail="Request type not found")
 
-        # Fetch rule
+        # ---------------- FETCH RULE ----------------
         cursor.execute(
             "SELECT * FROM rules WHERE request_type_id=%s",
             (rtype["id"],)
@@ -150,12 +206,11 @@ def submit_request(
         threshold = rule["attendance_threshold"]
         approval_chain = rule["approval_chain"].split(",")
 
-        # Document presence check
+        # ---------------- ELIGIBILITY SCORE ----------------
         caste_present = caste_doc is not None
         income_present = income_doc is not None
 
-        # Scholarship-specific scoring
-        score, issues = calculate_scholarship_score(
+        eligibility_score, eligibility_issues = calculate_scholarship_score(
             student["attendance"],
             student["backlogs"],
             threshold,
@@ -163,8 +218,8 @@ def submit_request(
             income_present
         )
 
-        # Save files
-        upload_dir = "../uploads"
+        # ---------------- SAVE FILES ----------------
+        upload_dir = "uploads"
         os.makedirs(upload_dir, exist_ok=True)
 
         caste_path = None
@@ -180,7 +235,58 @@ def submit_request(
             with open(income_path, "wb") as buffer:
                 shutil.copyfileobj(income_doc.file, buffer)
 
-        # Insert request
+        # ---------------- STRICT DOCUMENT VALIDATION ----------------
+
+        document_score = 0
+        document_issues = []
+
+        # ---- Caste Certificate Validation ----
+        if caste_path:
+            text = extract_text_from_pdf(caste_path)
+
+            mandatory = ["government", "caste certificate", "authority"]
+
+            missing = [m for m in mandatory if m not in text]
+
+            if missing:
+                document_issues.append("Invalid caste certificate format")
+            elif student["name"].lower() not in text:
+                document_issues.append("Student name not found in caste certificate")
+            else:
+                document_score += 100
+
+        else:
+            document_issues.append("Caste certificate not uploaded")
+
+        # ---- Income Certificate Validation ----
+        if income_path:
+            text = extract_text_from_pdf(income_path)
+
+            mandatory = ["income certificate", "annual income", "government"]
+
+            missing = [m for m in mandatory if m not in text]
+
+            if missing:
+                document_issues.append("Invalid income certificate format")
+            else:
+                document_score += 100
+
+        else:
+            document_issues.append("Income certificate not uploaded")
+
+        # If both documents uploaded → average score
+        if caste_path and income_path:
+            document_score = document_score / 2
+
+        # ---------------- FINAL SCORE LOGIC ----------------
+
+        # STRICT PENALTY IF DOCUMENT INVALID
+        if document_score < 50:
+            final_score = eligibility_score * 0.4
+        else:
+            final_score = (eligibility_score + document_score) / 2
+
+        # ---------------- INSERT REQUEST ----------------
         cursor.execute("""
             INSERT INTO requests
             (student_id, request_type_id, status,
@@ -190,7 +296,7 @@ def submit_request(
             student_id,
             rtype["id"],
             "Pending",
-            score,
+            final_score,
             approval_chain[0],
             f"Caste:{caste_path},Income:{income_path}"
         ))
@@ -199,38 +305,13 @@ def submit_request(
 
         return {
             "message": "Request submitted",
-            "approval_probability": score,
-            "current_stage": approval_chain[0],
-            "validation_issues": issues
+            "approval_probability": final_score,
+            "eligibility_score": eligibility_score,
+            "document_authenticity_score": document_score,
+            "validation_issues": eligibility_issues,
+            "document_issues": document_issues,
+            "current_stage": approval_chain[0]
         }
-
-    finally:
-        cursor.close()
-        db.close()
-
-# ---------------- DASHBOARD ---------------- #
-
-@app.get("/requests/{role}")
-def get_requests(role: str):
-
-    valid_roles = ["Advisor", "HOD", "Office", "Principal"]
-
-    if role not in valid_roles:
-        raise HTTPException(status_code=403, detail="Unauthorized role")
-
-    db = get_db()
-    cursor = db.cursor(dictionary=True)
-
-    try:
-        cursor.execute("""
-            SELECT r.id, u.name, u.attendance, u.backlogs,
-                   r.approval_probability, r.current_stage
-            FROM requests r
-            JOIN users u ON r.student_id = u.id
-            WHERE r.current_stage=%s AND r.status='Pending'
-        """, (role,))
-
-        return cursor.fetchall()
 
     finally:
         cursor.close()
@@ -239,43 +320,33 @@ def get_requests(role: str):
 # ---------------- APPROVE ---------------- #
 
 @app.post("/approve/{request_id}/{role}")
-def approve_request(request_id: int, role: str):
+def approve(request_id: int, role: str):
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            "SELECT * FROM requests WHERE id=%s",
-            (request_id,)
-        )
+        cursor.execute("SELECT * FROM requests WHERE id=%s", (request_id,))
         request = cursor.fetchone()
 
-        if not request:
-            raise HTTPException(status_code=404, detail="Request not found")
-
         cursor.execute("""
-            SELECT approval_chain
-            FROM rules
+            SELECT approval_chain FROM rules
             WHERE request_type_id=%s
         """, (request["request_type_id"],))
         rule = cursor.fetchone()
 
         chain = rule["approval_chain"].split(",")
 
-        if request["current_stage"] != role:
-            raise HTTPException(status_code=403, detail="Not authorized")
-
         index = chain.index(role)
 
-        if index == len(chain) - 1:
+        if index == len(chain)-1:
             cursor.execute("""
                 UPDATE requests
                 SET status='Approved', current_stage='Completed'
                 WHERE id=%s
             """, (request_id,))
         else:
-            next_stage = chain[index + 1]
+            next_stage = chain[index+1]
             cursor.execute("""
                 UPDATE requests
                 SET current_stage=%s
@@ -283,36 +354,21 @@ def approve_request(request_id: int, role: str):
             """, (next_stage, request_id))
 
         db.commit()
-
-        return {"message": "Moved to next stage"}
+        return {"message":"Moved to next stage"}
 
     finally:
         cursor.close()
         db.close()
 
+# ---------------- REJECT ---------------- #
+
 @app.post("/reject/{request_id}/{role}")
-def reject_request(
-    request_id: int,
-    role: str,
-    reason: str = Form(...)
-):
+def reject(request_id: int, role: str, reason: str = Form(...)):
 
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            "SELECT * FROM requests WHERE id=%s",
-            (request_id,)
-        )
-        request = cursor.fetchone()
-
-        if not request:
-            raise HTTPException(status_code=404, detail="Request not found")
-
-        if request["current_stage"] != role:
-            raise HTTPException(status_code=403, detail="Not authorized")
-
         cursor.execute("""
             UPDATE requests
             SET status='Rejected',
@@ -322,12 +378,13 @@ def reject_request(
         """, (reason, request_id))
 
         db.commit()
-
-        return {"message": "Request rejected successfully"}
+        return {"message":"Rejected successfully"}
 
     finally:
         cursor.close()
         db.close()
+
+# ---------------- STUDENT TRACKING ---------------- #
 
 @app.get("/student_requests/{student_id}")
 def student_requests(student_id: int):
@@ -337,13 +394,13 @@ def student_requests(student_id: int):
 
     try:
         cursor.execute("""
-            SELECT r.id, r.status,
-                   r.approval_probability,
-                   r.current_stage,
-                   r.rejection_reason
-            FROM requests r
-            WHERE r.student_id=%s
-            ORDER BY r.id DESC
+            SELECT id, status,
+                   approval_probability,
+                   current_stage,
+                   rejection_reason
+            FROM requests
+            WHERE student_id=%s
+            ORDER BY id DESC
         """, (student_id,))
 
         return cursor.fetchall()
