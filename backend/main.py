@@ -477,24 +477,35 @@ def reject(request_id: int, role: str, reason: str = Form(...)):
     cursor = db.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            """
+        cursor.execute("SELECT * FROM requests WHERE id=%s", (request_id,))
+        request = cursor.fetchone()
+
+        if not request:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        # DEBUG PRINT
+        print("Current Stage:", request["current_stage"])
+        print("Role Trying to Reject:", role)
+
+        # Case-insensitive comparison
+        if request["current_stage"].strip().lower() != role.strip().lower():
+            raise HTTPException(status_code=403, detail="Not authorized to reject")
+
+        cursor.execute("""
             UPDATE requests
             SET status='Rejected',
                 current_stage='Rejected',
                 rejection_reason=%s
             WHERE id=%s
-        """,
-            (reason, request_id),
-        )
+        """, (reason, request_id))
 
         db.commit()
-        return {"message": "Rejected successfully"}
+
+        return {"message": "Rejected "}
 
     finally:
         cursor.close()
         db.close()
-
 
 # ---------------- STUDENT TRACKING ---------------- #
 
