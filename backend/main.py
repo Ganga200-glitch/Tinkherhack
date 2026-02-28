@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
 import shutil
 import os
+import re
 
 app = FastAPI()
 
@@ -19,15 +20,15 @@ app.add_middleware(
 
 # ---------------- DATABASE ---------------- #
 
+
 def get_db():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Ganga@2005",
-        database="workflow_db"
+        host="localhost", user="root", password="Ganga@2005", database="workflow_db"
     )
 
+
 # ---------------- PDF EXTRACTION ---------------- #
+
 
 def extract_text_from_pdf(path):
     text = ""
@@ -44,56 +45,84 @@ def extract_text_from_pdf(path):
     print("Extracted Text:", text)
     return text.lower()
 
+
 # ---------------- DOCUMENT VALIDATION ---------------- #
+def validate_income_certificate(path):
+
+    text = extract_text_from_pdf(path)
+
+    issues = []
+    score = 0
+    extracted_income = None
+
+    # Basic format validation
+    if "income certificate" not in text:
+        issues.append("Income certificate keyword missing")
+
+    if "government" not in text:
+        issues.append("Government authority missing")
+
+    # Extract income amount using regex
+    match = re.search(r"(\d{1,2}[,]?\d{3}[,]?\d{3})", text)
+
+    if match:
+        extracted_income = int(match.group(1).replace(",", ""))
+
+        if extracted_income <= 600000:
+            score += 25
+
+        elif extracted_income <= 1000000:
+            score += 10
+
+        else:
+            score -= 20
+            issues.append("Income exceeds preferred threshold (6 lakh)")
+    else:
+        issues.append("Annual income amount not detected")
+
+    return score, issues, extracted_income
+
 
 def validate_caste_certificate(path, student_name):
+
     text = extract_text_from_pdf(path)
 
-    required = [
-        "government",
-        "caste certificate",
-        student_name.lower(),
-        "issued",
-        "authority"
-    ]
-
-    score = 0
     issues = []
-
-    for word in required:
-        if word in text:
-            score += 20
-        else:
-            issues.append(f"Missing keyword: {word}")
-
-    return score, issues
-
-
-def validate_income_certificate(path):
-    text = extract_text_from_pdf(path)
-
-    required = [
-        "income certificate",
-        "annual income",
-        "government",
-        "year"
-    ]
-
     score = 0
-    issues = []
+    detected_caste = None
 
-    for word in required:
-        if word in text:
-            score += 25
-        else:
-            issues.append(f"Missing keyword: {word}")
+    # Check student name
+    if student_name.lower() not in text:
+        issues.append("Student name not found in caste certificate")
 
-    return score, issues
+    # Detect caste category
+    if "scheduled caste" in text or " sc " in text:
+        score += 25
+        detected_caste = "SC"
+
+    elif "scheduled tribe" in text or " st " in text:
+        score += 25
+        detected_caste = "ST"
+
+    elif "obc" in text:
+        score += 15
+        detected_caste = "OBC"
+
+    elif "general" in text:
+        detected_caste = "General"
+
+    else:
+        issues.append("Caste category not detected")
+
+    return score, issues, detected_caste
+
 
 # ---------------- ELIGIBILITY ---------------- #
 
-def calculate_scholarship_score(attendance, backlogs, threshold,
-                                caste_present, income_present):
+
+def calculate_scholarship_score(
+    attendance, backlogs, threshold, caste_present, income_present
+):
 
     score = 0
     issues = []
@@ -120,7 +149,9 @@ def calculate_scholarship_score(attendance, backlogs, threshold,
 
     return score, issues
 
+
 # ---------------- REQUIREMENTS ---------------- #
+
 
 @app.get("/requirements/{request_type}")
 def get_requirements(request_type: str):
@@ -130,32 +161,30 @@ def get_requirements(request_type: str):
 
     try:
         cursor.execute(
-            "SELECT * FROM request_types WHERE LOWER(name)=LOWER(%s)",
-            (request_type,)
+            "SELECT * FROM request_types WHERE LOWER(name)=LOWER(%s)", (request_type,)
         )
         rtype = cursor.fetchone()
 
         if not rtype:
             raise HTTPException(404, "Request type not found")
 
-        cursor.execute(
-            "SELECT * FROM rules WHERE request_type_id=%s",
-            (rtype["id"],)
-        )
+        cursor.execute("SELECT * FROM rules WHERE request_type_id=%s", (rtype["id"],))
         rule = cursor.fetchone()
 
         return {
             "attendance_threshold": rule["attendance_threshold"],
             "max_backlogs": rule["max_backlogs"],
             "required_documents": rule["required_documents"].split(","),
-            "approval_chain": rule["approval_chain"].split(",")
+            "approval_chain": rule["approval_chain"].split(","),
         }
 
     finally:
         cursor.close()
         db.close()
 
+
 # ---------------- SUBMIT ---------------- #
+
 
 @app.post("/submit/")
 def submit_request(
@@ -163,7 +192,7 @@ def submit_request(
     request_type: str = Form(...),
     role: str = Form(...),
     caste_doc: UploadFile = File(None),
-    income_doc: UploadFile = File(None)
+    income_doc: UploadFile = File(None),
 ):
 
     if role.lower() != "student":
@@ -175,8 +204,7 @@ def submit_request(
     try:
         # ---------------- FETCH STUDENT ----------------
         cursor.execute(
-            "SELECT * FROM users WHERE id=%s AND role='student'",
-            (student_id,)
+            "SELECT * FROM users WHERE id=%s AND role='student'", (student_id,)
         )
         student = cursor.fetchone()
 
@@ -185,8 +213,7 @@ def submit_request(
 
         # ---------------- FETCH REQUEST TYPE ----------------
         cursor.execute(
-            "SELECT * FROM request_types WHERE LOWER(name)=LOWER(%s)",
-            (request_type,)
+            "SELECT * FROM request_types WHERE LOWER(name)=LOWER(%s)", (request_type,)
         )
         rtype = cursor.fetchone()
 
@@ -194,10 +221,7 @@ def submit_request(
             raise HTTPException(status_code=404, detail="Request type not found")
 
         # ---------------- FETCH RULE ----------------
-        cursor.execute(
-            "SELECT * FROM rules WHERE request_type_id=%s",
-            (rtype["id"],)
-        )
+        cursor.execute("SELECT * FROM rules WHERE request_type_id=%s", (rtype["id"],))
         rule = cursor.fetchone()
 
         if not rule:
@@ -215,7 +239,7 @@ def submit_request(
             student["backlogs"],
             threshold,
             caste_present,
-            income_present
+            income_present,
         )
 
         # ---------------- SAVE FILES ----------------
@@ -235,17 +259,18 @@ def submit_request(
             with open(income_path, "wb") as buffer:
                 shutil.copyfileobj(income_doc.file, buffer)
 
-        # ---------------- STRICT DOCUMENT VALIDATION ----------------
+        # =====================================================
+        # STRICT DOCUMENT VALIDATION (YOUR ORIGINAL LOGIC)
+        # =====================================================
 
         document_score = 0
         document_issues = []
 
-        # ---- Caste Certificate Validation ----
+        # ---- Caste Validation ----
         if caste_path:
             text = extract_text_from_pdf(caste_path)
 
             mandatory = ["government", "caste certificate", "authority"]
-
             missing = [m for m in mandatory if m not in text]
 
             if missing:
@@ -254,52 +279,118 @@ def submit_request(
                 document_issues.append("Student name not found in caste certificate")
             else:
                 document_score += 100
-
         else:
             document_issues.append("Caste certificate not uploaded")
 
-        # ---- Income Certificate Validation ----
+        # ---- Income Validation ----
         if income_path:
             text = extract_text_from_pdf(income_path)
 
             mandatory = ["income certificate", "annual income", "government"]
-
             missing = [m for m in mandatory if m not in text]
 
             if missing:
                 document_issues.append("Invalid income certificate format")
             else:
                 document_score += 100
-
         else:
             document_issues.append("Income certificate not uploaded")
 
-        # If both documents uploaded → average score
+        # If both uploaded → average
         if caste_path and income_path:
             document_score = document_score / 2
 
-        # ---------------- FINAL SCORE LOGIC ----------------
+        # =====================================================
+        # NEW POLICY INTELLIGENCE (ADDED FEATURE)
+        # =====================================================
 
-        # STRICT PENALTY IF DOCUMENT INVALID
+        ai_notes = []
+        policy_bonus = 0
+        extracted_income = None
+        detected_caste = None
+
+        caste_text = extract_text_from_pdf(caste_path) if caste_path else ""
+        income_text = extract_text_from_pdf(income_path) if income_path else ""
+
+        # ---- Income Policy ----
+        income_match = re.search(r"(\d{1,2}[,]?\d{3}[,]?\d{3})", income_text)
+
+        if income_match:
+            extracted_income = int(income_match.group(1).replace(",", ""))
+
+            if extracted_income <= 600000:
+                policy_bonus += 25
+                ai_notes.append("Income below 6 lakh – High approval priority")
+
+            elif extracted_income <= 1000000:
+                policy_bonus += 10
+                ai_notes.append("Income moderate – Medium priority")
+
+            else:
+                policy_bonus -= 20
+                ai_notes.append("Income above 10 lakh – Lower approval priority")
+        else:
+            ai_notes.append("Income amount not clearly detected")
+
+        # ---- Caste Policy ----
+        if "scheduled caste" in caste_text or " sc " in caste_text:
+            policy_bonus += 25
+            detected_caste = "SC"
+            ai_notes.append("SC category detected – Higher priority")
+
+        elif "scheduled tribe" in caste_text or " st " in caste_text:
+            policy_bonus += 25
+            detected_caste = "ST"
+            ai_notes.append("ST category detected – Higher priority")
+
+        elif "obc" in caste_text:
+            policy_bonus += 15
+            detected_caste = "OBC"
+            ai_notes.append("OBC category detected – Priority consideration")
+
+        elif "general" in caste_text:
+            detected_caste = "General"
+            ai_notes.append("General category – Standard evaluation")
+
+        else:
+            ai_notes.append("Caste category not clearly detected")
+
+        # =====================================================
+        # FINAL SCORE (YOUR LOGIC + POLICY BONUS)
+        # =====================================================
+
+        # Keep your strict penalty rule
         if document_score < 50:
             final_score = eligibility_score * 0.4
         else:
             final_score = (eligibility_score + document_score) / 2
 
+        # Add policy bonus on top
+        final_score += policy_bonus
+
+        # Clamp between 0 and 100
+        if final_score > 100:
+            final_score = 100
+        if final_score < 0:
+            final_score = 0
+
         # ---------------- INSERT REQUEST ----------------
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO requests
             (student_id, request_type_id, status,
              approval_probability, current_stage, document_path)
             VALUES (%s, %s, %s, %s, %s, %s)
-        """, (
-            student_id,
-            rtype["id"],
-            "Pending",
-            final_score,
-            approval_chain[0],
-            f"Caste:{caste_path},Income:{income_path}"
-        ))
+        """,
+            (
+                student_id,
+                rtype["id"],
+                "Pending",
+                final_score,
+                approval_chain[0],
+                f"Caste:{caste_path},Income:{income_path}",
+            ),
+        )
 
         db.commit()
 
@@ -308,16 +399,22 @@ def submit_request(
             "approval_probability": final_score,
             "eligibility_score": eligibility_score,
             "document_authenticity_score": document_score,
+            "policy_bonus": policy_bonus,
             "validation_issues": eligibility_issues,
             "document_issues": document_issues,
-            "current_stage": approval_chain[0]
+            "ai_notes": ai_notes,
+            "detected_income": extracted_income,
+            "detected_caste": detected_caste,
+            "current_stage": approval_chain[0],
         }
 
     finally:
         cursor.close()
         db.close()
 
+
 # ---------------- APPROVE ---------------- #
+
 
 @app.post("/approve/{request_id}/{role}")
 def approve(request_id: int, role: str):
@@ -329,38 +426,49 @@ def approve(request_id: int, role: str):
         cursor.execute("SELECT * FROM requests WHERE id=%s", (request_id,))
         request = cursor.fetchone()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT approval_chain FROM rules
             WHERE request_type_id=%s
-        """, (request["request_type_id"],))
+        """,
+            (request["request_type_id"],),
+        )
         rule = cursor.fetchone()
 
         chain = rule["approval_chain"].split(",")
 
         index = chain.index(role)
 
-        if index == len(chain)-1:
-            cursor.execute("""
+        if index == len(chain) - 1:
+            cursor.execute(
+                """
                 UPDATE requests
                 SET status='Approved', current_stage='Completed'
                 WHERE id=%s
-            """, (request_id,))
+            """,
+                (request_id,),
+            )
         else:
-            next_stage = chain[index+1]
-            cursor.execute("""
+            next_stage = chain[index + 1]
+            cursor.execute(
+                """
                 UPDATE requests
                 SET current_stage=%s
                 WHERE id=%s
-            """, (next_stage, request_id))
+            """,
+                (next_stage, request_id),
+            )
 
         db.commit()
-        return {"message":"Moved to next stage"}
+        return {"message": "Moved to next stage"}
 
     finally:
         cursor.close()
         db.close()
 
+
 # ---------------- REJECT ---------------- #
+
 
 @app.post("/reject/{request_id}/{role}")
 def reject(request_id: int, role: str, reason: str = Form(...)):
@@ -369,22 +477,27 @@ def reject(request_id: int, role: str, reason: str = Form(...)):
     cursor = db.cursor(dictionary=True)
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE requests
             SET status='Rejected',
                 current_stage='Rejected',
                 rejection_reason=%s
             WHERE id=%s
-        """, (reason, request_id))
+        """,
+            (reason, request_id),
+        )
 
         db.commit()
-        return {"message":"Rejected successfully"}
+        return {"message": "Rejected successfully"}
 
     finally:
         cursor.close()
         db.close()
 
+
 # ---------------- STUDENT TRACKING ---------------- #
+
 
 @app.get("/student_requests/{student_id}")
 def student_requests(student_id: int):
@@ -393,7 +506,8 @@ def student_requests(student_id: int):
     cursor = db.cursor(dictionary=True)
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, status,
                    approval_probability,
                    current_stage,
@@ -401,7 +515,9 @@ def student_requests(student_id: int):
             FROM requests
             WHERE student_id=%s
             ORDER BY id DESC
-        """, (student_id,))
+        """,
+            (student_id,),
+        )
 
         return cursor.fetchall()
 
@@ -409,7 +525,9 @@ def student_requests(student_id: int):
         cursor.close()
         db.close()
 
+
 # ---------------- DASHBOARD PENDING REQUESTS ---------------- #
+
 
 @app.get("/requests/{role}")
 def get_requests(role: str):
@@ -418,14 +536,17 @@ def get_requests(role: str):
     cursor = db.cursor(dictionary=True)
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT r.id, u.name, u.attendance, u.backlogs,
                    r.approval_probability, r.current_stage
             FROM requests r
             JOIN users u ON r.student_id = u.id
             WHERE LOWER(r.current_stage)=LOWER(%s)
             AND r.status='Pending'
-        """, (role,))
+        """,
+            (role,),
+        )
 
         return cursor.fetchall()
 
