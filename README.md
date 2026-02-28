@@ -222,6 +222,8 @@ Authenticates users based on role (Student, Advisor, HOD, Principal, Admin).
   "role": "Student"
 }
 ```
+##Demo vedio
+https://drive.google.com/drive/u/1/home
 
 
 ## AI Tools Used (Optional - For Transparency Bonus)
